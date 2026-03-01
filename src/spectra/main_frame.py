@@ -29,6 +29,8 @@ class MainFrame(wx.Frame):
         self.CreateStatusBar()
         self.SetStatusText("Ready")
 
+        wx.CallAfter(self.endpoint_tree.focus)
+
     def _build_ui(self) -> None:
         splitter = wx.SplitterWindow(self)
         splitter.SetName("Main Splitter")
@@ -65,7 +67,9 @@ class MainFrame(wx.Frame):
         right_sizer.Add(self.detail_panel, 2, wx.EXPAND | wx.ALL, 4)
         right_sizer.Add(self.request_panel, 3, wx.EXPAND | wx.ALL, 4)
         right_sizer.Add(self.response_panel, 3, wx.EXPAND | wx.ALL, 4)
-        right_sizer.Add(wx.StaticText(right_panel, label="History"), 0, wx.LEFT | wx.TOP, 4)
+        history_label = wx.StaticText(right_panel, label="History")
+        history_label.SetName("History Label")
+        right_sizer.Add(history_label, 0, wx.LEFT | wx.TOP, 4)
         right_sizer.Add(self.history_list, 2, wx.EXPAND | wx.ALL, 4)
         right_panel.SetSizer(right_sizer)
 
@@ -124,8 +128,7 @@ class MainFrame(wx.Frame):
             self,
             "Open OpenAPI Spec",
             wildcard=(
-                "JSON/YAML files (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|"
-                "All files (*.*)|*.*"
+                "JSON/YAML files (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|All files (*.*)|*.*"
             ),
             style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
         ) as dialog:
@@ -181,6 +184,7 @@ class MainFrame(wx.Frame):
         self.request_panel.clear()
         self.response_panel.clear()
         self.SetStatusText(f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints)")
+        wx.CallAfter(self.endpoint_tree.focus)
 
     def _on_endpoint_selected(self, endpoint: Endpoint) -> None:
         self._current_endpoint = endpoint
@@ -190,6 +194,7 @@ class MainFrame(wx.Frame):
         self.request_panel.prefill_from_endpoint(endpoint, base_url=base_url)
 
         self.SetStatusText(f"Selected endpoint: {endpoint.method} {endpoint.path}")
+        wx.CallAfter(self.request_panel.url_text.SetFocus)
 
     def _derive_base_url(self, source: str) -> str:
         if not source:
@@ -206,12 +211,23 @@ class MainFrame(wx.Frame):
         self._refresh_history_list()
 
     def _refresh_history_list(self) -> None:
-        self.history_list.DeleteAllItems()
-        for row, item in enumerate(self._history.list_items()):
-            self.history_list.InsertItem(row, item.method)
-            self.history_list.SetItem(row, 1, item.url)
+        items = self._history.list_items()
+        current_count = self.history_list.GetItemCount()
+
+        for row, item in enumerate(items):
             status = str(item.status_code) if item.status_code is not None else "-"
-            self.history_list.SetItem(row, 2, status)
+            if row < current_count:
+                self.history_list.SetItem(row, 0, item.method)
+                self.history_list.SetItem(row, 1, item.url)
+                self.history_list.SetItem(row, 2, status)
+            else:
+                self.history_list.InsertItem(row, item.method)
+                self.history_list.SetItem(row, 1, item.url)
+                self.history_list.SetItem(row, 2, status)
+
+        # Remove excess rows if history shrunk
+        while self.history_list.GetItemCount() > len(items):
+            self.history_list.DeleteItem(self.history_list.GetItemCount() - 1)
 
     def _on_history_selected(self, event: wx.ListEvent) -> None:
         index = event.GetIndex()
