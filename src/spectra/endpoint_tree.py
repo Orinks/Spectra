@@ -56,7 +56,7 @@ class EndpointTree(wx.Panel):
             for endpoint in filtered:
                 label = f"{endpoint.method} {endpoint.path}"
                 item = self.tree.AppendItem(tag_item, label)
-                self.tree.SetItemData(item, endpoint)
+                self.tree.SetItemData(item, wx.TreeItemData(endpoint))
 
         self.tree.Expand(self._root)
 
@@ -74,6 +74,9 @@ class EndpointTree(wx.Panel):
     def _emit_if_endpoint(self, item: wx.TreeItemId) -> None:
         if not item.IsOk():
             return
-        endpoint = self.tree.GetItemData(item)
+        item_data = self.tree.GetItemData(item)
+        if not item_data:
+            return
+        endpoint = item_data.GetData()
         if isinstance(endpoint, Endpoint):
             self._on_select(endpoint)
