@@ -12,12 +12,14 @@ authors = [
   { name = "Spectra Contributors" }
 ]
 dependencies = [
-  "wxPython>=4.2",
   "requests>=2.32",
   "PyYAML>=6.0"
 ]
 
 [project.optional-dependencies]
+wx = [
+  "wxPython>=4.2",
+]
 dev = [
   "pytest>=8.0",
   "pytest-mock>=3.12",
