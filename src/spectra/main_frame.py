@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import wx
 
 from spectra.detail_panel import DetailPanel
@@ -11,6 +13,19 @@ from spectra.request_panel import RequestPanel
 from spectra.response_panel import ResponsePanel
 from spectra.spec_loader import SpecLoaderError, load_spec
 from spectra.spec_parser import Endpoint, parse_spec
+
+
+class SpecFileDropTarget(wx.FileDropTarget):
+    def __init__(self, on_drop: Callable[[str], None]) -> None:
+        super().__init__()
+        self._on_drop = on_drop
+
+    def OnDropFiles(self, x: int, y: int, filenames: list[str]) -> bool:
+        del x, y
+        if not filenames:
+            return False
+        self._on_drop(filenames[0])
+        return True
 
 
 class MainFrame(wx.Frame):
@@ -25,6 +40,7 @@ class MainFrame(wx.Frame):
         self._build_ui()
         self._build_menu()
         self._build_shortcuts()
+        self.SetDropTarget(SpecFileDropTarget(self._load_spec))
 
         self.CreateStatusBar()
         self.SetStatusText("Ready")
@@ -122,9 +138,9 @@ class MainFrame(wx.Frame):
     def _on_open_file(self, _event: wx.CommandEvent) -> None:
         with wx.FileDialog(
             self,
-            "Open OpenAPI Spec",
+            "Open API Description",
             wildcard=(
-                "JSON/YAML files (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|"
+                "API description files (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|"
                 "All files (*.*)|*.*"
             ),
             style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
@@ -134,7 +150,7 @@ class MainFrame(wx.Frame):
             self._load_spec(dialog.GetPath())
 
     def _on_open_url(self, _event: wx.CommandEvent) -> None:
-        dialog = wx.TextEntryDialog(self, "Enter OpenAPI/Swagger URL", "Open URL")
+        dialog = wx.TextEntryDialog(self, "Enter OpenAPI, Swagger, or Postman URL", "Open URL")
         dialog.SetValue("https://")
         try:
             if dialog.ShowModal() == wx.ID_OK:
@@ -179,6 +195,7 @@ class MainFrame(wx.Frame):
         self.endpoint_tree.set_endpoints(parsed.by_tag)
         self.detail_panel.clear()
         self.request_panel.clear()
+        self.request_panel.set_variables(parsed.variables)
         self.response_panel.clear()
         self.SetStatusText(f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints)")
 

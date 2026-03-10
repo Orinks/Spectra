@@ -1,4 +1,4 @@
-"""OpenAPI spec loader for local files and remote URLs."""
+"""API description loader for local files and remote URLs."""
 
 from __future__ import annotations
 
@@ -37,11 +37,23 @@ def _parse_spec_text(content: str, source: str) -> dict:
         errors.append(f"YAML parse error: {exc}")
 
     joined = "; ".join(errors)
-    msg = f"Invalid OpenAPI/Swagger spec from {source!r}: {joined}"
+    msg = f"Invalid API description from {source!r}: {joined}"
     raise SpecLoaderError(msg)
 
 
-def _validate_version(spec: dict) -> None:
+def _is_postman_collection(spec: dict) -> bool:
+    info = spec.get("info")
+    items = spec.get("item")
+    if not isinstance(info, dict) or not isinstance(items, list):
+        return False
+
+    schema = info.get("schema")
+    if isinstance(schema, str) and "schema.getpostman.com" in schema and "/collection/" in schema:
+        return True
+    return True
+
+
+def _validate_format(spec: dict) -> None:
     openapi = spec.get("openapi")
     swagger = spec.get("swagger")
 
@@ -57,12 +69,15 @@ def _validate_version(spec: dict) -> None:
         msg = f"Unsupported Swagger version: {swagger}"
         raise SpecLoaderError(msg)
 
-    msg = "Spec must define either 'openapi' (3.x) or 'swagger' (2.x)"
+    if _is_postman_collection(spec):
+        return
+
+    msg = "Spec must define OpenAPI 3.x, Swagger 2.x, or a Postman Collection"
     raise SpecLoaderError(msg)
 
 
 def load_spec(source: str, timeout: float = 15.0) -> dict:
-    """Load OpenAPI/Swagger spec from a local file path or HTTP(S) URL."""
+    """Load an OpenAPI, Swagger, or Postman description from a local file path or HTTP(S) URL."""
     if source.startswith(("http://", "https://")):
         try:
             response = requests.get(source, timeout=timeout)
@@ -86,5 +101,5 @@ def load_spec(source: str, timeout: float = 15.0) -> dict:
             raise SpecLoaderError(msg) from exc
         spec = _parse_spec_text(content, str(path))
 
-    _validate_version(spec)
+    _validate_format(spec)
     return spec

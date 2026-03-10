@@ -49,6 +49,53 @@ def test_prefill_method(wx_app: wx.App) -> None:
     assert panel.method_choice.GetStringSelection() == "POST"
 
 
+def test_prefill_postman_request_fields_and_variables(wx_app: wx.App) -> None:
+    panel = make_panel(wx_app)
+    panel.set_variables({"baseUrl": "https://api.example.com", "userId": "42"})
+    endpoint = Endpoint(
+        method="GET",
+        path="/users/{{userId}}",
+        summary="",
+        description="",
+        request_url="{{baseUrl}}/users/{{userId}}",
+        request_headers={"Accept": "application/json", "X-User": "{{userId}}"},
+        request_body_text='{"id":"{{userId}}"}',
+    )
+
+    panel.prefill_from_endpoint(endpoint)
+
+    assert panel.url_text.GetValue() == "https://api.example.com/users/42"
+    assert panel.headers_text.GetValue() == "Accept: application/json\nX-User: 42"
+    assert panel.body_text.GetValue() == '{"id":"42"}'
+
+
+def test_apply_variables_preserves_unknown_placeholders(wx_app: wx.App) -> None:
+    panel = make_panel(wx_app)
+    panel.set_variables({"baseUrl": "https://api.example.com"})
+    endpoint = Endpoint(
+        method="GET",
+        path="/users/{{userId}}",
+        summary="",
+        description="",
+        request_url="{{baseUrl}}/users/{{userId}}",
+    )
+
+    panel.prefill_from_endpoint(endpoint)
+
+    assert panel.url_text.GetValue() == "https://api.example.com/users/{{userId}}"
+
+
+def test_clear_keeps_variable_values(wx_app: wx.App) -> None:
+    panel = make_panel(wx_app)
+    panel.set_variables({"baseUrl": "https://api.example.com"})
+    panel.url_text.SetValue("https://api.example.com/users")
+
+    panel.clear()
+
+    assert panel.variables_text.GetValue() == "baseUrl=https://api.example.com"
+    assert panel.url_text.GetValue() == ""
+
+
 def test_parse_headers_ignores_invalid_lines(wx_app: wx.App) -> None:
     panel = make_panel(wx_app)
     panel.headers_text.SetValue("Accept: application/json\nInvalidLine\nX-Test: one")

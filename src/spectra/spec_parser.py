@@ -1,8 +1,11 @@
-"""Parsers for OpenAPI and Swagger endpoint metadata."""
+"""Parsers for OpenAPI, Swagger, and Postman endpoint metadata."""
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from urllib.parse import urlencode
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 
@@ -25,12 +28,16 @@ class Endpoint:
     parameters: list[Parameter] = field(default_factory=list)
     request_body: str = ""
     responses: dict[str, str] = field(default_factory=dict)
+    request_url: str = ""
+    request_headers: dict[str, str] = field(default_factory=dict)
+    request_body_text: str = ""
 
 
 @dataclass(slots=True)
 class ParsedSpec:
     endpoints: list[Endpoint]
     by_tag: dict[str, list[Endpoint]]
+    variables: dict[str, str] = field(default_factory=dict)
 
 
 def _schema_to_text(schema: dict | None) -> str:
@@ -156,11 +163,177 @@ def _group_by_tag(endpoints: list[Endpoint]) -> dict[str, list[Endpoint]]:
     return by_tag
 
 
+def _build_postman_url(url_value: str | dict) -> tuple[str, str]:
+    if isinstance(url_value, str):
+        return url_value, url_value
+
+    if not isinstance(url_value, dict):
+        return "", ""
+
+    raw = str(url_value.get("raw", "")).strip()
+
+    path_value = url_value.get("path")
+    if isinstance(path_value, list) and path_value:
+        path = "/" + "/".join(str(part).strip("/") for part in path_value if str(part))
+    elif isinstance(path_value, str) and path_value:
+        path = path_value if path_value.startswith("/") else f"/{path_value}"
+    else:
+        path = raw
+
+    query_value = url_value.get("query")
+    if isinstance(query_value, list):
+        query_items: list[tuple[str, str]] = []
+        for item in query_value:
+            if not isinstance(item, dict) or item.get("disabled"):
+                continue
+            key = str(item.get("key", "")).strip()
+            value = str(item.get("value", "")).strip()
+            if key:
+                query_items.append((key, value))
+        if query_items:
+            query_text = urlencode(query_items)
+            if query_text:
+                separator = "&" if "?" in path else "?"
+                path = f"{path}{separator}{query_text}"
+
+    if raw:
+        return raw, path
+
+    protocol = str(url_value.get("protocol", "")).strip()
+    host_value = url_value.get("host")
+    if isinstance(host_value, list):
+        host = ".".join(str(part) for part in host_value if str(part))
+    else:
+        host = str(host_value or "").strip()
+
+    if protocol and host:
+        return f"{protocol}://{host}{path}", path
+    return path, path
+
+
+def _parse_postman_headers(headers: Iterable[dict]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for item in headers:
+        if not isinstance(item, dict) or item.get("disabled"):
+            continue
+        key = str(item.get("key", "")).strip()
+        if not key:
+            continue
+        parsed[key] = str(item.get("value", "")).strip()
+    return parsed
+
+
+def _parse_postman_body(body: dict) -> str:
+    mode = str(body.get("mode", "")).strip()
+    if mode == "raw":
+        return str(body.get("raw", ""))
+    if mode in {"urlencoded", "formdata"}:
+        rows: list[str] = []
+        for item in body.get(mode, []):
+            if not isinstance(item, dict) or item.get("disabled"):
+                continue
+            key = str(item.get("key", "")).strip()
+            value = str(item.get("value", "")).strip()
+            if key:
+                rows.append(f"{key}={value}")
+        return "\n".join(rows)
+    if mode == "graphql":
+        graphql = body.get("graphql")
+        if not isinstance(graphql, dict):
+            return ""
+        parts: list[str] = []
+        query = str(graphql.get("query", "")).strip()
+        variables = graphql.get("variables")
+        if query:
+            parts.append(query)
+        if variables:
+            variable_text = variables
+            if not isinstance(variable_text, str):
+                variable_text = json.dumps(variable_text, indent=2, sort_keys=True)
+            parts.append(str(variable_text))
+        return "\n\n".join(parts)
+    return ""
+
+
+def _extract_postman_variables(spec: dict) -> dict[str, str]:
+    raw_variables = spec.get("variable")
+    if not isinstance(raw_variables, list):
+        return {}
+
+    variables: dict[str, str] = {}
+    for item in raw_variables:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key", "")).strip()
+        if not key:
+            continue
+        value = item.get("value", item.get("default", ""))
+        variables[key] = "" if value is None else str(value)
+    return variables
+
+
+def _postman_description_text(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        content = value.get("content")
+        if isinstance(content, str):
+            return content.strip()
+    return ""
+
+
+def _parse_postman_items(
+    items: list[dict],
+    folder_stack: list[str],
+    endpoints: list[Endpoint],
+) -> None:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        nested_items = item.get("item")
+        if isinstance(nested_items, list):
+            folder_name = str(item.get("name", "")).strip()
+            next_stack = [*folder_stack, folder_name] if folder_name else folder_stack
+            _parse_postman_items(nested_items, next_stack, endpoints)
+            continue
+
+        request = item.get("request")
+        if not isinstance(request, dict):
+            continue
+
+        request_url, display_path = _build_postman_url(request.get("url", ""))
+        tags = [" / ".join(folder_stack)] if folder_stack else ["default"]
+        body = request.get("body")
+        body_text = _parse_postman_body(body) if isinstance(body, dict) else ""
+        endpoint = Endpoint(
+            method=str(request.get("method", "GET")).upper(),
+            path=display_path or request_url or "/",
+            summary=str(item.get("name", "")).strip(),
+            description=_postman_description_text(request.get("description")),
+            tags=tags,
+            request_body=body_text,
+            request_url=request_url or display_path or "/",
+            request_headers=_parse_postman_headers(request.get("header", [])),
+            request_body_text=body_text,
+        )
+        endpoints.append(endpoint)
+
+
 def parse_spec(spec: dict) -> ParsedSpec:
-    """Parse an OpenAPI 3.x or Swagger 2.x spec to endpoint metadata."""
+    """Parse an OpenAPI 3.x, Swagger 2.x, or Postman Collection spec."""
+    if isinstance(spec.get("item"), list):
+        endpoints: list[Endpoint] = []
+        _parse_postman_items(spec["item"], folder_stack=[], endpoints=endpoints)
+        return ParsedSpec(
+            endpoints=endpoints,
+            by_tag=_group_by_tag(endpoints),
+            variables=_extract_postman_variables(spec),
+        )
+
     paths = spec.get("paths")
     if not isinstance(paths, dict):
-        return ParsedSpec(endpoints=[], by_tag={})
+        return ParsedSpec(endpoints=[], by_tag={}, variables={})
 
     is_openapi3 = isinstance(spec.get("openapi"), str)
     is_swagger2 = isinstance(spec.get("swagger"), str)
@@ -208,7 +381,8 @@ def parse_spec(spec: dict) -> ParsedSpec:
                 parameters=parameters,
                 request_body=request_body,
                 responses=_parse_responses(operation),
+                request_url=str(path),
             )
             endpoints.append(endpoint)
 
-    return ParsedSpec(endpoints=endpoints, by_tag=_group_by_tag(endpoints))
+    return ParsedSpec(endpoints=endpoints, by_tag=_group_by_tag(endpoints), variables={})
