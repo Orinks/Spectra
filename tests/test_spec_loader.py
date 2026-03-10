@@ -10,6 +10,10 @@ from spectra.spec_loader import SpecLoaderError, load_spec
 OPENAPI_JSON = '{"openapi":"3.0.0","paths":{}}'
 OPENAPI_YAML = "openapi: 3.0.1\npaths: {}\n"
 SWAGGER_JSON = '{"swagger":"2.0","paths":{}}'
+POSTMAN_JSON = (
+    '{"info":{"name":"Demo","schema":"https://schema.getpostman.com/json/collection/'
+    'v2.1.0/collection.json"},"item":[]}'
+)
 
 
 def test_load_local_json(tmp_path: Path) -> None:
@@ -39,6 +43,15 @@ def test_load_swagger2(tmp_path: Path) -> None:
     assert spec["swagger"] == "2.0"
 
 
+def test_load_postman_collection(tmp_path: Path) -> None:
+    file_path = tmp_path / "collection.json"
+    file_path.write_text(POSTMAN_JSON, encoding="utf-8")
+
+    spec = load_spec(str(file_path))
+
+    assert spec["info"]["name"] == "Demo"
+
+
 def test_load_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(SpecLoaderError, match="not found"):
         load_spec(str(tmp_path / "missing.json"))
@@ -61,7 +74,7 @@ def test_invalid_text_raises(tmp_path: Path) -> None:
     file_path = tmp_path / "bad.txt"
     file_path.write_text("not: [valid", encoding="utf-8")
 
-    with pytest.raises(SpecLoaderError, match="Invalid OpenAPI/Swagger"):
+    with pytest.raises(SpecLoaderError, match="Invalid API description"):
         load_spec(str(file_path))
 
 
