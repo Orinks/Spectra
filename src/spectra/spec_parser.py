@@ -13,6 +13,7 @@ class Parameter:
     location: str
     required: bool
     schema: str
+    description: str = ""
 
 
 @dataclass(slots=True)
@@ -24,6 +25,7 @@ class Endpoint:
     tags: list[str] = field(default_factory=list)
     parameters: list[Parameter] = field(default_factory=list)
     request_body: str = ""
+    example_body: str = ""
     responses: dict[str, str] = field(default_factory=dict)
 
 
@@ -142,6 +144,7 @@ def _parse_parameters(raw_parameters: list[dict]) -> list[Parameter]:
                 location=str(item.get("in", "unknown")),
                 required=bool(item.get("required", False)),
                 schema=_schema_to_text(schema if isinstance(schema, dict) else None),
+                description=str(item.get("description", "")).strip(),
             )
         )
     return parameters
