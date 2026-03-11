@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 
-import wx
+import pytest
 
-from spectra.history import RequestHistory
-from spectra.request_panel import RequestPanel
-from spectra.spec_parser import Endpoint
+wx = pytest.importorskip("wx")
+
+from spectra.history import RequestHistory  # noqa: E402
+from spectra.request_panel import RequestPanel  # noqa: E402
+from spectra.spec_parser import Endpoint  # noqa: E402
 
 
 def make_panel(wx_app: wx.App) -> RequestPanel:
@@ -47,6 +49,21 @@ def test_prefill_method(wx_app: wx.App) -> None:
     panel.prefill_from_endpoint(endpoint)
 
     assert panel.method_choice.GetStringSelection() == "POST"
+
+
+def test_prefill_example_body(wx_app: wx.App) -> None:
+    panel = make_panel(wx_app)
+    endpoint = Endpoint(
+        method="POST",
+        path="/users",
+        summary="",
+        description="",
+        example_body='{"name":"Ada"}',
+    )
+
+    panel.prefill_from_endpoint(endpoint)
+
+    assert panel.body_text.GetValue() == '{"name":"Ada"}'
 
 
 def test_parse_headers_ignores_invalid_lines(wx_app: wx.App) -> None:

@@ -29,7 +29,8 @@ class DetailPanel(wx.Panel):
             for param in endpoint.parameters:
                 req = "required" if param.required else "optional"
                 schema = param.schema or "unspecified"
-                lines.append(f"- {param.name} ({param.location}, {req}): {schema}")
+                description = f" - {param.description}" if param.description else ""
+                lines.append(f"- {param.name} ({param.location}, {req}): {schema}{description}")
             parameters = "\n".join(lines)
 
         request_body = endpoint.request_body or "None"

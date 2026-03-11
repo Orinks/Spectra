@@ -89,31 +89,45 @@ def test_missing_version_keys_raises(tmp_path: Path) -> None:
         load_spec(str(file_path))
 
 
-def test_load_url_json(mocker) -> None:
-    response = mocker.Mock()
-    response.text = OPENAPI_JSON
-    response.raise_for_status.return_value = None
-    mock_get = mocker.patch("spectra.spec_loader.requests.get", return_value=response)
+def test_load_url_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_response = type("Response", (), {})()
+    mock_response.text = OPENAPI_JSON
+    mock_response.raise_for_status = lambda: None
+
+    calls: list[tuple[str, float]] = []
+
+    def fake_get(url: str, timeout: float):
+        calls.append((url, timeout))
+        return mock_response
+
+    monkeypatch.setattr("spectra.spec_loader.requests.get", fake_get)
 
     spec = load_spec("https://example.com/openapi.json")
 
-    mock_get.assert_called_once()
+    assert calls == [("https://example.com/openapi.json", 15.0)]
     assert spec["openapi"] == "3.0.0"
 
 
-def test_load_url_yaml(mocker) -> None:
-    response = mocker.Mock()
-    response.text = OPENAPI_YAML
-    response.raise_for_status.return_value = None
-    mocker.patch("spectra.spec_loader.requests.get", return_value=response)
+def test_load_url_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_response = type("Response", (), {})()
+    mock_response.text = OPENAPI_YAML
+    mock_response.raise_for_status = lambda: None
+
+    monkeypatch.setattr(
+        "spectra.spec_loader.requests.get",
+        lambda *_args, **_kwargs: mock_response,
+    )
 
     spec = load_spec("https://example.com/openapi.yaml")
 
     assert spec["openapi"] == "3.0.1"
 
 
-def test_load_url_request_error_raises(mocker) -> None:
-    mocker.patch("spectra.spec_loader.requests.get", side_effect=requests.RequestException("boom"))
+def test_load_url_request_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_request_error(*_args, **_kwargs):
+        raise requests.RequestException("boom")
+
+    monkeypatch.setattr("spectra.spec_loader.requests.get", raise_request_error)
 
     with pytest.raises(SpecLoaderError, match="Unable to fetch"):
         load_spec("https://example.com/fail")

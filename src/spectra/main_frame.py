@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import wx
 
+from spectra.collection_builder import CollectionBuilderDialog
+from spectra.collection_parser import ParsedCollection, load_collection
 from spectra.detail_panel import DetailPanel
 from spectra.endpoint_tree import EndpointTree
 from spectra.history import RequestHistory
 from spectra.request_panel import RequestPanel
 from spectra.response_panel import ResponsePanel
 from spectra.spec_loader import SpecLoaderError, load_spec
-from spectra.spec_parser import Endpoint, parse_spec
+from spectra.spec_parser import Endpoint, ParsedSpec, parse_spec
 
 
 class MainFrame(wx.Frame):
@@ -19,6 +24,7 @@ class MainFrame(wx.Frame):
 
         self.SetName("Spectra Main Frame")
         self._last_source: str = ""
+        self._current_base_url: str = ""
         self._current_endpoint: Endpoint | None = None
         self._history = RequestHistory(max_items=50)
 
@@ -80,6 +86,7 @@ class MainFrame(wx.Frame):
         menu_bar = wx.MenuBar()
 
         file_menu = wx.Menu()
+        new_collection = file_menu.Append(wx.ID_NEW, "New Collection\tCtrl+N")
         open_file = file_menu.Append(wx.ID_OPEN, "Open Spec File\tCtrl+O")
         open_url = file_menu.Append(wx.ID_ANY, "Open Spec URL\tCtrl+U")
         reload_item = file_menu.Append(wx.ID_REFRESH, "Reload\tF5")
@@ -95,6 +102,7 @@ class MainFrame(wx.Frame):
         menu_bar.Append(edit_menu, "Edit")
         self.SetMenuBar(menu_bar)
 
+        self.Bind(wx.EVT_MENU, self._on_new_collection, new_collection)
         self.Bind(wx.EVT_MENU, self._on_open_file, open_file)
         self.Bind(wx.EVT_MENU, self._on_open_url, open_url)
         self.Bind(wx.EVT_MENU, self._on_reload, reload_item)
@@ -105,6 +113,7 @@ class MainFrame(wx.Frame):
 
     def _build_shortcuts(self) -> None:
         entries = [
+            (wx.ACCEL_CTRL, ord("N"), wx.ID_NEW),
             (wx.ACCEL_CTRL, ord("O"), wx.ID_OPEN),
             (wx.ACCEL_CTRL, ord("U"), wx.ID_ANY + 10),
             (wx.ACCEL_NORMAL, wx.WXK_F5, wx.ID_REFRESH),
@@ -119,11 +128,38 @@ class MainFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self._on_open_url, id=wx.ID_ANY + 10)
         self.Bind(wx.EVT_MENU, self._on_focus_history, id=wx.ID_ANY + 11)
 
+    def _on_new_collection(self, _event: wx.CommandEvent) -> None:
+        with CollectionBuilderDialog(self) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return
+            document = dialog.build_document()
+
+        with wx.FileDialog(
+            self,
+            "Save Spectra Collection",
+            wildcard="Spectra collections (*.spectra.json)|*.spectra.json",
+            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+            defaultFile=(
+                f"{document['name'].strip().replace(' ', '_') or 'collection'}"
+                ".spectra.json"
+            ),
+        ) as file_dialog:
+            if file_dialog.ShowModal() == wx.ID_CANCEL:
+                return
+            path = file_dialog.GetPath()
+            if not path.endswith(".spectra.json"):
+                path = f"{path}.spectra.json"
+
+        if not self._save_collection(path, document):
+            return
+        self._load_spec(path)
+
     def _on_open_file(self, _event: wx.CommandEvent) -> None:
         with wx.FileDialog(
             self,
-            "Open OpenAPI Spec",
+            "Open API File",
             wildcard=(
+                "Spectra collections (*.spectra.json)|*.spectra.json|"
                 "JSON/YAML files (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|"
                 "All files (*.*)|*.*"
             ),
@@ -168,14 +204,14 @@ class MainFrame(wx.Frame):
 
     def _load_spec(self, source: str) -> None:
         try:
-            spec = load_spec(source)
-            parsed = parse_spec(spec)
+            parsed, base_url = self._load_source(source)
         except SpecLoaderError as exc:
             self._show_error(str(exc))
             self.SetStatusText("Spec load failed")
             return
 
         self._last_source = source
+        self._current_base_url = base_url
         self.endpoint_tree.set_endpoints(parsed.by_tag)
         self.detail_panel.clear()
         self.request_panel.clear()
@@ -186,10 +222,34 @@ class MainFrame(wx.Frame):
         self._current_endpoint = endpoint
         self.detail_panel.show_endpoint(endpoint)
 
-        base_url = self._derive_base_url(self._last_source)
-        self.request_panel.prefill_from_endpoint(endpoint, base_url=base_url)
+        self.request_panel.prefill_from_endpoint(endpoint, base_url=self._current_base_url)
 
         self.SetStatusText(f"Selected endpoint: {endpoint.method} {endpoint.path}")
+
+    def _load_source(self, source: str) -> tuple[ParsedCollection | ParsedSpec, str]:
+        if self._is_collection_file(source):
+            collection = load_collection(source)
+            return collection, collection.base_url
+
+        spec = load_spec(source)
+        parsed = parse_spec(spec)
+        return parsed, self._derive_base_url(source)
+
+    def _is_collection_file(self, source: str) -> bool:
+        if source.startswith(("http://", "https://")):
+            return False
+        return source.endswith(".spectra.json")
+
+    def _save_collection(self, path_str: str, document: dict) -> bool:
+        path = Path(path_str).expanduser()
+        try:
+            path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        except OSError as exc:
+            msg = f"Unable to save collection file {path}: {exc}"
+            self._show_error(msg)
+            self.SetStatusText("Collection save failed")
+            return False
+        return True
 
     def _derive_base_url(self, source: str) -> str:
         if not source:

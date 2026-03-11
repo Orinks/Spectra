@@ -100,6 +100,7 @@ class RequestPanel(wx.Panel):
         if method_index != wx.NOT_FOUND:
             self.method_choice.SetSelection(method_index)
         self.url_text.SetValue(f"{base_url}{endpoint.path}" if base_url else endpoint.path)
+        self.body_text.SetValue(endpoint.example_body)
 
     def parse_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
