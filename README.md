@@ -7,6 +7,7 @@ Swagger UI and many API tools can be difficult to use with screen readers. Spect
 ## Features
 
 - Load OpenAPI 3.x and Swagger 2.x specs from local JSON/YAML files or URLs
+- Import HAR 1.2 files from browser DevTools and save them as reusable `.spectra.json` collections
 - Browse endpoints grouped by tag in a keyboard-navigable tree
 - Read endpoint details in text form: method, path, summary, parameters, request body, and responses
 - Send requests from a built-in REST client with headers, auth, and body editing
@@ -32,6 +33,7 @@ spectra
 |---|---|
 | `Ctrl+O` | Open spec file |
 | `Ctrl+U` | Open spec URL |
+| `Ctrl+I` | Import HAR |
 | `Ctrl+Enter` | Send request |
 | `Ctrl+H` | Focus history |
 | `Ctrl+F` | Filter endpoints |

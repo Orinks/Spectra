@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import wx
 
+from spectra.collection_store import CollectionStoreError, load_collection, save_collection
 from spectra.detail_panel import DetailPanel
 from spectra.endpoint_tree import EndpointTree
+from spectra.har_import import HarImportError, load_har_file
 from spectra.history import RequestHistory
 from spectra.request_panel import RequestPanel
 from spectra.response_panel import ResponsePanel
 from spectra.spec_loader import SpecLoaderError, load_spec
-from spectra.spec_parser import Endpoint, parse_spec
+from spectra.spec_parser import Endpoint, ParsedSpec, parse_spec
 
 
 class MainFrame(wx.Frame):
@@ -19,6 +21,7 @@ class MainFrame(wx.Frame):
 
         self.SetName("Spectra Main Frame")
         self._last_source: str = ""
+        self._current_collection: ParsedSpec | None = None
         self._current_endpoint: Endpoint | None = None
         self._history = RequestHistory(max_items=50)
 
@@ -82,6 +85,8 @@ class MainFrame(wx.Frame):
         file_menu = wx.Menu()
         open_file = file_menu.Append(wx.ID_OPEN, "Open Spec File\tCtrl+O")
         open_url = file_menu.Append(wx.ID_ANY, "Open Spec URL\tCtrl+U")
+        import_har = file_menu.Append(wx.ID_ANY, "Import HAR\tCtrl+I")
+        save_collection_item = file_menu.Append(wx.ID_SAVEAS, "Save Collection As...")
         reload_item = file_menu.Append(wx.ID_REFRESH, "Reload\tF5")
         file_menu.AppendSeparator()
         exit_item = file_menu.Append(wx.ID_EXIT, "Exit")
@@ -97,6 +102,8 @@ class MainFrame(wx.Frame):
 
         self.Bind(wx.EVT_MENU, self._on_open_file, open_file)
         self.Bind(wx.EVT_MENU, self._on_open_url, open_url)
+        self.Bind(wx.EVT_MENU, self._on_import_har, import_har)
+        self.Bind(wx.EVT_MENU, self._on_save_collection, save_collection_item)
         self.Bind(wx.EVT_MENU, self._on_reload, reload_item)
         self.Bind(wx.EVT_MENU, self._on_filter, filter_item)
         self.Bind(wx.EVT_MENU, self._on_clear_request, clear_item)
@@ -107,6 +114,7 @@ class MainFrame(wx.Frame):
         entries = [
             (wx.ACCEL_CTRL, ord("O"), wx.ID_OPEN),
             (wx.ACCEL_CTRL, ord("U"), wx.ID_ANY + 10),
+            (wx.ACCEL_CTRL, ord("I"), wx.ID_ANY + 12),
             (wx.ACCEL_NORMAL, wx.WXK_F5, wx.ID_REFRESH),
             (wx.ACCEL_CTRL, ord("F"), wx.ID_FIND),
             (wx.ACCEL_NORMAL, wx.WXK_ESCAPE, wx.ID_CLEAR),
@@ -118,12 +126,14 @@ class MainFrame(wx.Frame):
 
         self.Bind(wx.EVT_MENU, self._on_open_url, id=wx.ID_ANY + 10)
         self.Bind(wx.EVT_MENU, self._on_focus_history, id=wx.ID_ANY + 11)
+        self.Bind(wx.EVT_MENU, self._on_import_har, id=wx.ID_ANY + 12)
 
     def _on_open_file(self, _event: wx.CommandEvent) -> None:
         with wx.FileDialog(
             self,
-            "Open OpenAPI Spec",
+            "Open Spec or Collection",
             wildcard=(
+                "Spectra collections (*.spectra.json)|*.spectra.json|"
                 "JSON/YAML files (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|"
                 "All files (*.*)|*.*"
             ),
@@ -131,7 +141,7 @@ class MainFrame(wx.Frame):
         ) as dialog:
             if dialog.ShowModal() == wx.ID_CANCEL:
                 return
-            self._load_spec(dialog.GetPath())
+            self._load_source(dialog.GetPath())
 
     def _on_open_url(self, _event: wx.CommandEvent) -> None:
         dialog = wx.TextEntryDialog(self, "Enter OpenAPI/Swagger URL", "Open URL")
@@ -142,11 +152,47 @@ class MainFrame(wx.Frame):
         finally:
             dialog.Destroy()
 
+    def _on_import_har(self, _event: wx.CommandEvent) -> None:
+        with wx.FileDialog(
+            self,
+            "Import HAR File",
+            wildcard="HAR files (*.har)|*.har|All files (*.*)|*.*",
+            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+        ) as dialog:
+            if dialog.ShowModal() == wx.ID_CANCEL:
+                return
+            self._load_source(dialog.GetPath())
+
+    def _on_save_collection(self, _event: wx.CommandEvent) -> None:
+        if not self._current_collection or not self._current_collection.endpoints:
+            self._show_error("No imported endpoints available to save")
+            return
+
+        with wx.FileDialog(
+            self,
+            "Save Spectra Collection",
+            wildcard="Spectra collections (*.spectra.json)|*.spectra.json",
+            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+        ) as dialog:
+            dialog.SetFilename("collection.spectra.json")
+            if dialog.ShowModal() == wx.ID_CANCEL:
+                return
+            path = dialog.GetPath()
+            if not path.endswith(".spectra.json"):
+                path = f"{path}.spectra.json"
+            try:
+                save_collection(path, self._current_collection)
+            except CollectionStoreError as exc:
+                self._show_error(str(exc))
+                self.SetStatusText("Collection save failed")
+                return
+            self.SetStatusText(f"Collection saved: {path}")
+
     def _on_reload(self, _event: wx.CommandEvent) -> None:
         if not self._last_source:
             self._show_error("No spec source to reload")
             return
-        self._load_spec(self._last_source)
+        self._load_source(self._last_source)
 
     def _on_filter(self, _event: wx.CommandEvent) -> None:
         dialog = wx.TextEntryDialog(self, "Filter endpoints by text", "Filter")
@@ -166,21 +212,33 @@ class MainFrame(wx.Frame):
         self.history_list.SetFocus()
         self.SetStatusText("History focused")
 
-    def _load_spec(self, source: str) -> None:
+    def _load_source(self, source: str) -> None:
         try:
-            spec = load_spec(source)
-            parsed = parse_spec(spec)
-        except SpecLoaderError as exc:
+            parsed = self._parse_source(source)
+        except (CollectionStoreError, HarImportError, SpecLoaderError) as exc:
             self._show_error(str(exc))
-            self.SetStatusText("Spec load failed")
+            self.SetStatusText("Load failed")
             return
 
         self._last_source = source
+        self._current_collection = parsed
         self.endpoint_tree.set_endpoints(parsed.by_tag)
         self.detail_panel.clear()
         self.request_panel.clear()
         self.response_panel.clear()
-        self.SetStatusText(f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints)")
+        self.SetStatusText(f"Loaded: {source} ({len(parsed.endpoints)} endpoints)")
+
+    def _load_spec(self, source: str) -> None:
+        self._load_source(source)
+
+    def _parse_source(self, source: str) -> ParsedSpec:
+        normalized = source.lower()
+        if normalized.endswith(".har"):
+            return load_har_file(source)
+        if normalized.endswith(".spectra.json"):
+            return load_collection(source)
+        spec = load_spec(source)
+        return parse_spec(spec)
 
     def _on_endpoint_selected(self, endpoint: Endpoint) -> None:
         self._current_endpoint = endpoint

@@ -99,7 +99,12 @@ class RequestPanel(wx.Panel):
         method_index = self.method_choice.FindString(endpoint.method)
         if method_index != wx.NOT_FOUND:
             self.method_choice.SetSelection(method_index)
-        self.url_text.SetValue(f"{base_url}{endpoint.path}" if base_url else endpoint.path)
+        request_url = endpoint.url or (f"{base_url}{endpoint.path}" if base_url else endpoint.path)
+        self.url_text.SetValue(request_url)
+        self.headers_text.SetValue(
+            "\n".join(f"{key}: {value}" for key, value in endpoint.request_headers.items())
+        )
+        self.body_text.SetValue(endpoint.request_body)
 
     def parse_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}

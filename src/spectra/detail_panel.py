@@ -23,6 +23,12 @@ class DetailPanel(wx.Panel):
         self.SetSizer(sizer)
 
     def show_endpoint(self, endpoint: Endpoint) -> None:
+        request_headers = "None"
+        if endpoint.request_headers:
+            request_headers = "\n".join(
+                f"- {key}: {value}" for key, value in endpoint.request_headers.items()
+            )
+
         parameters = "None"
         if endpoint.parameters:
             lines = []
@@ -43,10 +49,12 @@ class DetailPanel(wx.Panel):
 
         text = (
             f"Method: {endpoint.method}\n"
+            f"URL: {endpoint.url or 'Derived from selection'}\n"
             f"Path: {endpoint.path}\n"
             f"Summary: {endpoint.summary or 'None'}\n"
             f"Description: {endpoint.description or 'None'}\n\n"
             f"Parameters:\n{parameters}\n\n"
+            f"Request Headers:\n{request_headers}\n\n"
             f"Request Body:\n{request_body}\n\n"
             f"Responses:\n{responses}"
         )

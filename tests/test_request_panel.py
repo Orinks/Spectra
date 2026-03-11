@@ -49,6 +49,25 @@ def test_prefill_method(wx_app: wx.App) -> None:
     assert panel.method_choice.GetStringSelection() == "POST"
 
 
+def test_prefill_headers_and_body(wx_app: wx.App) -> None:
+    panel = make_panel(wx_app)
+    endpoint = Endpoint(
+        method="POST",
+        path="/users",
+        url="https://api.example.com/users",
+        summary="",
+        description="",
+        request_headers={"Accept": "application/json", "X-Test": "one"},
+        request_body='{"name":"Ada"}',
+    )
+
+    panel.prefill_from_endpoint(endpoint)
+
+    assert panel.url_text.GetValue() == "https://api.example.com/users"
+    assert panel.headers_text.GetValue() == "Accept: application/json\nX-Test: one"
+    assert panel.body_text.GetValue() == '{"name":"Ada"}'
+
+
 def test_parse_headers_ignores_invalid_lines(wx_app: wx.App) -> None:
     panel = make_panel(wx_app)
     panel.headers_text.SetValue("Accept: application/json\nInvalidLine\nX-Test: one")
