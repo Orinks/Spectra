@@ -21,8 +21,10 @@ class Endpoint:
     path: str
     summary: str
     description: str
+    url: str = ""
     tags: list[str] = field(default_factory=list)
     parameters: list[Parameter] = field(default_factory=list)
+    request_headers: dict[str, str] = field(default_factory=dict)
     request_body: str = ""
     responses: dict[str, str] = field(default_factory=dict)
 
