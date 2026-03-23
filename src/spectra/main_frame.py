@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import wx
 
 from spectra.detail_panel import DetailPanel
@@ -10,7 +12,9 @@ from spectra.history import RequestHistory
 from spectra.request_panel import RequestPanel
 from spectra.response_panel import ResponsePanel
 from spectra.spec_loader import SpecLoaderError, load_spec
+from spectra.spec_manager_dialog import SpecManagerDialog
 from spectra.spec_parser import Endpoint, parse_spec
+from spectra.spec_store import SpecStore
 
 
 class MainFrame(wx.Frame):
@@ -21,6 +25,7 @@ class MainFrame(wx.Frame):
         self._last_source: str = ""
         self._current_endpoint: Endpoint | None = None
         self._history = RequestHistory(max_items=50)
+        self._spec_store = SpecStore()
 
         self._build_ui()
         self._build_menu()
@@ -87,6 +92,7 @@ class MainFrame(wx.Frame):
         open_file = file_menu.Append(wx.ID_OPEN, "Open Spec File\tCtrl+O")
         open_url = file_menu.Append(wx.ID_ANY, "Open Spec URL\tCtrl+U")
         reload_item = file_menu.Append(wx.ID_REFRESH, "Reload\tF5")
+        spec_mgr_item = file_menu.Append(wx.ID_ANY, "Spec Manager\tCtrl+M")
         file_menu.AppendSeparator()
         exit_item = file_menu.Append(wx.ID_EXIT, "Exit")
 
@@ -102,6 +108,7 @@ class MainFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self._on_open_file, open_file)
         self.Bind(wx.EVT_MENU, self._on_open_url, open_url)
         self.Bind(wx.EVT_MENU, self._on_reload, reload_item)
+        self.Bind(wx.EVT_MENU, self._on_spec_manager, spec_mgr_item)
         self.Bind(wx.EVT_MENU, self._on_filter, filter_item)
         self.Bind(wx.EVT_MENU, self._on_clear_request, clear_item)
         self.Bind(wx.EVT_MENU, self._on_focus_history, history_item)
@@ -169,6 +176,19 @@ class MainFrame(wx.Frame):
         self.history_list.SetFocus()
         self.SetStatusText("History focused")
 
+    def _on_spec_manager(self, _event: wx.CommandEvent) -> None:
+        dlg = SpecManagerDialog(self, self._spec_store)
+        try:
+            if dlg.ShowModal() == wx.ID_OK:
+                source = dlg.get_selected_source()
+                name = dlg.get_selected_name()
+                if source:
+                    self._load_spec(source)
+                    if name:
+                        self._spec_store.touch(name)
+        finally:
+            dlg.Destroy()
+
     def _load_spec(self, source: str) -> None:
         try:
             spec = load_spec(source)
@@ -185,6 +205,29 @@ class MainFrame(wx.Frame):
         self.response_panel.clear()
         self.SetStatusText(f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints)")
         wx.CallAfter(self.endpoint_tree.focus)
+
+        already_saved = any(s.source == source for s in self._spec_store.list_specs())
+        if not already_saved:
+            if source.startswith(("http://", "https://")):
+                name = source.split("/")[-1]
+            else:
+                name = os.path.basename(source)
+            dlg = wx.MessageDialog(
+                self,
+                f"Save this spec to Spec Manager?\nName: {name}",
+                "Save Spec",
+                wx.YES_NO | wx.ICON_QUESTION,
+            )
+            try:
+                if dlg.ShowModal() == wx.ID_YES:
+                    from spectra.spec_store import SavedSpec
+
+                    try:
+                        self._spec_store.add(SavedSpec(name=name, source=source))
+                    except ValueError:
+                        pass
+            finally:
+                dlg.Destroy()
 
     def _on_endpoint_selected(self, endpoint: Endpoint) -> None:
         self._current_endpoint = endpoint
