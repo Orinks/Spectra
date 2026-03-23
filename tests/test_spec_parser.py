@@ -254,3 +254,77 @@ def test_parse_ref_schema_parameter() -> None:
     endpoint = parse_spec(spec).endpoints[0]
 
     assert endpoint.parameters[0].schema == "#/components/schemas/F"
+
+
+def test_parse_postman_collection_groups_by_folder_and_prefill_fields() -> None:
+    spec = {
+        "info": {
+            "name": "Weather",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        },
+        "variable": [{"key": "baseUrl", "value": "https://api.example.com"}],
+        "item": [
+            {
+                "name": "Forecast",
+                "item": [
+                    {
+                        "name": "Get Forecast",
+                        "request": {
+                            "method": "GET",
+                            "header": [{"key": "Accept", "value": "application/json"}],
+                            "url": {
+                                "raw": "{{baseUrl}}/forecast?days=5",
+                                "path": ["forecast"],
+                                "query": [{"key": "days", "value": "5"}],
+                            },
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    parsed = parse_spec(spec)
+
+    assert parsed.variables == {"baseUrl": "https://api.example.com"}
+    assert set(parsed.by_tag) == {"Forecast"}
+    endpoint = parsed.by_tag["Forecast"][0]
+    assert endpoint.method == "GET"
+    assert endpoint.path == "/forecast?days=5"
+    assert endpoint.request_url == "{{baseUrl}}/forecast?days=5"
+    assert endpoint.request_headers == {"Accept": "application/json"}
+
+
+def test_parse_postman_collection_body_and_nested_folder_name() -> None:
+    spec = {
+        "info": {"name": "Demo", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+        "item": [
+            {
+                "name": "Admin",
+                "item": [
+                    {
+                        "name": "Users",
+                        "item": [
+                            {
+                                "name": "Create User",
+                                "request": {
+                                    "method": "POST",
+                                    "body": {
+                                        "mode": "raw",
+                                        "raw": '{"name":"{{userName}}"}',
+                                    },
+                                    "url": "https://api.example.com/users",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    endpoint = parse_spec(spec).endpoints[0]
+
+    assert endpoint.tags == ["Admin / Users"]
+    assert endpoint.request_body == '{"name":"{{userName}}"}'
+    assert endpoint.request_body_text == '{"name":"{{userName}}"}'
