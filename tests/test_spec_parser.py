@@ -87,6 +87,40 @@ def test_parse_parameters_path_and_operation() -> None:
     assert endpoint.parameters[1].name == "expand"
 
 
+def test_operation_parameter_overrides_matching_path_parameter() -> None:
+    spec = {
+        "openapi": "3.0.0",
+        "paths": {
+            "/u/{id}": {
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {"name": "expand", "in": "query", "schema": {"type": "boolean"}},
+                ],
+                "get": {
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            }
+        },
+    }
+
+    endpoint = parse_spec(spec).endpoints[0]
+
+    assert len(endpoint.parameters) == 2
+    assert [(parameter.name, parameter.location) for parameter in endpoint.parameters] == [
+        ("id", "path"),
+        ("expand", "query"),
+    ]
+    assert endpoint.parameters[0].schema == "integer"
+
+
 def test_parse_openapi_request_body() -> None:
     spec = {
         "openapi": "3.0.0",
@@ -297,7 +331,10 @@ def test_parse_postman_collection_groups_by_folder_and_prefill_fields() -> None:
 
 def test_parse_postman_collection_body_and_nested_folder_name() -> None:
     spec = {
-        "info": {"name": "Demo", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+        "info": {
+            "name": "Demo",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        },
         "item": [
             {
                 "name": "Admin",

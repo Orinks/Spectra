@@ -154,6 +154,28 @@ def _parse_parameters(raw_parameters: list[dict]) -> list[Parameter]:
     return parameters
 
 
+def _merge_parameters(path_parameters: list[dict], operation_parameters: list[dict]) -> list[dict]:
+    merged_parameters = [*path_parameters]
+    parameter_positions = {
+        (str(parameter.get("name", "")), str(parameter.get("in", ""))): index
+        for index, parameter in enumerate(merged_parameters)
+        if isinstance(parameter, dict)
+    }
+
+    for parameter in operation_parameters:
+        if not isinstance(parameter, dict):
+            continue
+
+        parameter_key = (str(parameter.get("name", "")), str(parameter.get("in", "")))
+        if parameter_key in parameter_positions:
+            merged_parameters[parameter_positions[parameter_key]] = parameter
+        else:
+            parameter_positions[parameter_key] = len(merged_parameters)
+            merged_parameters.append(parameter)
+
+    return merged_parameters
+
+
 def _group_by_tag(endpoints: list[Endpoint]) -> dict[str, list[Endpoint]]:
     by_tag: dict[str, list[Endpoint]] = {}
     for endpoint in endpoints:
@@ -358,7 +380,7 @@ def parse_spec(spec: dict) -> ParsedSpec:
             if not isinstance(op_parameters, list):
                 op_parameters = []
 
-            merged_parameters = [*path_parameters, *op_parameters]
+            merged_parameters = _merge_parameters(path_parameters, op_parameters)
             parameters = _parse_parameters([p for p in merged_parameters if isinstance(p, dict)])
 
             if is_openapi3:
