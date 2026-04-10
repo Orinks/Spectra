@@ -121,6 +121,35 @@ def test_operation_parameter_overrides_matching_path_parameter() -> None:
     assert endpoint.parameters[0].schema == "integer"
 
 
+def test_swagger_operation_parameter_overrides_matching_path_parameter() -> None:
+    spec = {
+        "swagger": "2.0",
+        "paths": {
+            "/u/{id}": {
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "type": "string"},
+                    {"name": "expand", "in": "query", "type": "boolean"},
+                ],
+                "get": {
+                    "parameters": [
+                        {"name": "id", "in": "path", "required": True, "type": "integer"}
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            }
+        },
+    }
+
+    endpoint = parse_spec(spec).endpoints[0]
+
+    assert len(endpoint.parameters) == 2
+    assert [(parameter.name, parameter.location) for parameter in endpoint.parameters] == [
+        ("id", "path"),
+        ("expand", "query"),
+    ]
+    assert endpoint.parameters[0].schema == "integer"
+
+
 def test_parse_openapi_request_body() -> None:
     spec = {
         "openapi": "3.0.0",

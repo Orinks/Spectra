@@ -154,20 +154,39 @@ def _parse_parameters(raw_parameters: list[dict]) -> list[Parameter]:
     return parameters
 
 
+def _parameter_override_key(parameter: dict) -> tuple[str, str] | None:
+    name = parameter.get("name")
+    location = parameter.get("in")
+
+    if not isinstance(name, str) or not isinstance(location, str):
+        return None
+
+    normalized_name = name.strip()
+    normalized_location = location.strip()
+    if not normalized_name or not normalized_location:
+        return None
+
+    return normalized_name, normalized_location
+
+
 def _merge_parameters(path_parameters: list[dict], operation_parameters: list[dict]) -> list[dict]:
     merged_parameters = [*path_parameters]
     parameter_positions = {
-        (str(parameter.get("name", "")), str(parameter.get("in", ""))): index
+        parameter_key: index
         for index, parameter in enumerate(merged_parameters)
         if isinstance(parameter, dict)
+        for parameter_key in [_parameter_override_key(parameter)]
+        if parameter_key is not None
     }
 
     for parameter in operation_parameters:
         if not isinstance(parameter, dict):
             continue
 
-        parameter_key = (str(parameter.get("name", "")), str(parameter.get("in", "")))
-        if parameter_key in parameter_positions:
+        parameter_key = _parameter_override_key(parameter)
+        if parameter_key is None:
+            merged_parameters.append(parameter)
+        elif parameter_key in parameter_positions:
             merged_parameters[parameter_positions[parameter_key]] = parameter
         else:
             parameter_positions[parameter_key] = len(merged_parameters)
