@@ -28,6 +28,7 @@ if GH_TOKEN:
 
 def open_request(req: urllib.request.Request, timeout: int) -> Any:
     """Open a request, preserving POST data across temporary redirects."""
+    redirects: list[str] = []
     for _ in range(5):
         try:
             return urllib.request.urlopen(req, timeout=timeout)
@@ -37,13 +38,17 @@ def open_request(req: urllib.request.Request, timeout: int) -> Any:
             location = exc.headers.get("Location")
             if not location:
                 raise
+            next_url = urllib.parse.urljoin(req.full_url, location)
+            parsed = urllib.parse.urlparse(next_url)
+            redirects.append(f"{exc.code} {parsed.path or '/'}")
             req = urllib.request.Request(
-                urllib.parse.urljoin(req.full_url, location),
+                next_url,
                 data=req.data,
                 headers=dict(req.header_items()),
                 method=req.get_method(),
             )
-    msg = "Too many redirects while pushing release metadata"
+    chain = " -> ".join(redirects) if redirects else "none"
+    msg = f"Too many redirects while pushing release metadata: {chain}"
     raise RuntimeError(msg)
 
 
