@@ -85,8 +85,12 @@ def main() -> None:
             result = attempt()
             print(f"Pushed {result['count']} releases for {result['repo']}")
             return
-        except Exception as exc:
-            print("First push attempt failed." if attempt_num == 0 else "Second push attempt failed.")
+        except Exception:
+            if attempt_num == 0:
+                message = "First push attempt failed."
+            else:
+                message = "Second push attempt failed."
+            print(message)
             if attempt_num == 0:
                 if BUST_CACHE_FIRST:
                     print("Cache nudge enabled. Hitting bust-cache before retry...")
