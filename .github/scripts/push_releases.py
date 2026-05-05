@@ -6,6 +6,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -23,6 +24,27 @@ GH_API_HEADERS: dict[str, str] = {
 }
 if GH_TOKEN:
     GH_API_HEADERS["Authorization"] = f"Bearer {GH_TOKEN}"
+
+
+def open_request(req: urllib.request.Request, timeout: int) -> Any:
+    """Open a request, preserving POST data across temporary redirects."""
+    for _ in range(5):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {307, 308}:
+                raise
+            location = exc.headers.get("Location")
+            if not location:
+                raise
+            req = urllib.request.Request(
+                urllib.parse.urljoin(req.full_url, location),
+                data=req.data,
+                headers=dict(req.header_items()),
+                method=req.get_method(),
+            )
+    msg = "Too many redirects while pushing release metadata"
+    raise RuntimeError(msg)
 
 
 def gh_json(endpoint: str, allow_missing: bool = False) -> Any:
@@ -58,7 +80,7 @@ def push_releases(payload: dict[str, Any]) -> dict[str, Any]:
         headers=HEADERS,
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with open_request(req, timeout=30) as response:
         return json.load(response)
 
 
@@ -70,7 +92,7 @@ def bust_cache() -> dict[str, Any]:
         headers=HEADERS,
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
+    with open_request(req, timeout=20) as response:
         return json.load(response)
 
 
