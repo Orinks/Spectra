@@ -112,7 +112,7 @@ def main() -> None:
             result = attempt()
             print(f"Pushed {result['count']} releases for {result['repo']}")
             return
-        except Exception:
+        except Exception as exc:
             if attempt_num == 0:
                 message = "First push attempt failed."
             else:
@@ -121,11 +121,17 @@ def main() -> None:
             if attempt_num == 0:
                 if BUST_CACHE_FIRST:
                     print("Cache nudge enabled. Hitting bust-cache before retry...")
-                    bust_result = bust_cache()
-                    print("Cache nudge response:", bust_result)
+                    try:
+                        bust_result = bust_cache()
+                        print("Cache nudge response:", bust_result)
+                    except RuntimeError as exc:
+                        print(f"::warning::WordPress cache nudge skipped: {exc}")
                 print("Retrying once in 10s...")
                 time.sleep(10)
                 continue
+            if isinstance(exc, RuntimeError):
+                print(f"::warning::WordPress release sync skipped: {exc}")
+                return
             raise
 
 
