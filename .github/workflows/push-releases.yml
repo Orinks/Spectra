@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
       - name: Push release data to WordPress
         env:
           WP_TOKEN: ${{ secrets.WP_PUSH_TOKEN }}
