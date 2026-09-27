@@ -52,6 +52,7 @@ if "wx" not in sys.modules:
         _wx.StaticText = MagicMock
         _wx.Button = MagicMock
         _wx.Choice = MagicMock
+        _wx.ComboBox = MagicMock
         _wx.CheckBox = MagicMock
         _wx.ListCtrl = MagicMock
         _wx.TreeCtrl = MagicMock

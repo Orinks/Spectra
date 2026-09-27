@@ -254,3 +254,37 @@ def test_parse_ref_schema_parameter() -> None:
     endpoint = parse_spec(spec).endpoints[0]
 
     assert endpoint.parameters[0].schema == "#/components/schemas/F"
+
+
+def test_openapi_servers_resolve_variable_defaults() -> None:
+    spec = {
+        "openapi": "3.1.0",
+        "servers": [
+            {"url": "https://open-api.thenational.academy/api/v0"},
+            {"url": "https://{env}.example.com/v1", "variables": {"env": {"default": "staging"}}},
+            {"url": "/relative"},
+        ],
+        "paths": {},
+    }
+
+    assert parse_spec(spec).servers == [
+        "https://open-api.thenational.academy/api/v0",
+        "https://staging.example.com/v1",
+        "/relative",
+    ]
+
+
+def test_swagger2_servers_from_host_and_base_path() -> None:
+    spec = {
+        "swagger": "2.0",
+        "host": "api.example.com",
+        "basePath": "/v2",
+        "schemes": ["http", "https"],
+        "paths": {},
+    }
+
+    assert parse_spec(spec).servers == ["https://api.example.com/v2"]
+
+
+def test_swagger2_servers_without_host_uses_base_path() -> None:
+    assert parse_spec({"swagger": "2.0", "basePath": "/v2", "paths": {}}).servers == ["/v2"]

@@ -17,6 +17,13 @@ StatusCallback = Callable[[str], None]
 ErrorCallback = Callable[[str], None]
 
 
+def join_url(base_url: str, url: str) -> str:
+    """Prefix a relative URL with the base URL; absolute URLs pass through."""
+    if not base_url or url.startswith(("http://", "https://")):
+        return url
+    return f"{base_url.rstrip('/')}/{url.lstrip('/')}"
+
+
 class RequestPanel(wx.Panel):
     def __init__(
         self,
@@ -32,6 +39,11 @@ class RequestPanel(wx.Panel):
         self._on_status = on_status
         self._on_error = on_error
         self._history = history
+
+        base_url_label = wx.StaticText(self, label="Base URL")
+        base_url_label.SetName("Base URL Label")
+        self.base_url_combo = wx.ComboBox(self)
+        self.base_url_combo.SetName("Base URL")
 
         method_label = wx.StaticText(self, label="Method")
         method_label.SetName("Method Label")
@@ -77,6 +89,8 @@ class RequestPanel(wx.Panel):
         grid = wx.FlexGridSizer(cols=2, hgap=6, vgap=6)
         grid.AddGrowableCol(1, 1)
 
+        grid.Add(base_url_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.base_url_combo, 1, wx.EXPAND)
         grid.Add(method_label, 0, wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.method_choice, 1, wx.EXPAND)
         grid.Add(url_label, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -95,11 +109,15 @@ class RequestPanel(wx.Panel):
         sizer.Add(send_button, 0, wx.ALIGN_RIGHT | wx.ALL, 4)
         self.SetSizer(sizer)
 
-    def prefill_from_endpoint(self, endpoint: Endpoint, base_url: str = "") -> None:
+    def set_servers(self, servers: list[str]) -> None:
+        self.base_url_combo.Set(servers)
+        self.base_url_combo.SetValue(servers[0] if servers else "")
+
+    def prefill_from_endpoint(self, endpoint: Endpoint) -> None:
         method_index = self.method_choice.FindString(endpoint.method)
         if method_index != wx.NOT_FOUND:
             self.method_choice.SetSelection(method_index)
-        self.url_text.SetValue(f"{base_url}{endpoint.path}" if base_url else endpoint.path)
+        self.url_text.SetValue(endpoint.path)
 
     def parse_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -129,6 +147,7 @@ class RequestPanel(wx.Panel):
         if not url:
             self._on_error("URL is required")
             return
+        url = join_url(self.base_url_combo.GetValue().strip(), url)
 
         headers = self.parse_headers()
         headers.update(self.build_auth_headers())

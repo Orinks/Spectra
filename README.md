@@ -10,6 +10,7 @@ Swagger UI and many API tools can be difficult to use with screen readers. Spect
 - Browse endpoints grouped by tag in a keyboard-navigable tree
 - Read endpoint details in text form: method, path, summary, parameters, request body, and responses
 - Send requests from a built-in REST client with headers, auth, and body editing
+- Set a base URL once for every endpoint, pre-filled from the spec's `servers` (or Swagger 2 `host`/`basePath`)
 - Review response status, headers, and pretty JSON body
 - Track request history (last 50 requests) and repopulate requests quickly
 - Accessibility-focused controls and keyboard shortcuts
