@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urljoin
 
 import wx
 
@@ -203,7 +204,17 @@ class MainFrame(wx.Frame):
         self.detail_panel.clear()
         self.request_panel.clear()
         self.response_panel.clear()
-        self.SetStatusText(f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints)")
+
+        servers = parsed.servers
+        if source.startswith(("http://", "https://")):
+            # Relative servers resolve against the spec URL; none means its own directory.
+            servers = [urljoin(source, server) for server in servers or ["."]]
+        self.request_panel.set_servers(servers)
+
+        base = servers[0] if servers else "none, enter one"
+        self.SetStatusText(
+            f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints), base URL {base}"
+        )
         wx.CallAfter(self.endpoint_tree.focus)
 
         already_saved = any(s.source == source for s in self._spec_store.list_specs())
@@ -232,22 +243,10 @@ class MainFrame(wx.Frame):
     def _on_endpoint_selected(self, endpoint: Endpoint) -> None:
         self._current_endpoint = endpoint
         self.detail_panel.show_endpoint(endpoint)
-
-        base_url = self._derive_base_url(self._last_source)
-        self.request_panel.prefill_from_endpoint(endpoint, base_url=base_url)
+        self.request_panel.prefill_from_endpoint(endpoint)
 
         self.SetStatusText(f"Selected endpoint: {endpoint.method} {endpoint.path}")
         wx.CallAfter(self.request_panel.url_text.SetFocus)
-
-    def _derive_base_url(self, source: str) -> str:
-        if not source:
-            return ""
-        if source.startswith(("http://", "https://")):
-            if source.endswith("/"):
-                return source[:-1]
-            slash = source.rfind("/")
-            return source[:slash] if slash > 8 else source
-        return ""
 
     def _handle_response(self, status_code: int, headers: dict[str, str], body: str) -> None:
         self.response_panel.show_response(status_code, headers, body)

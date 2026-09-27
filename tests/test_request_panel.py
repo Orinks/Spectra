@@ -4,7 +4,7 @@ import base64
 from unittest.mock import MagicMock, patch
 
 from spectra.history import RequestHistory
-from spectra.request_panel import RequestPanel
+from spectra.request_panel import RequestPanel, join_url
 from spectra.spec_parser import Endpoint
 
 
@@ -17,6 +17,7 @@ def make_panel() -> RequestPanel:
         panel._on_error = MagicMock()
         panel._history = RequestHistory()
 
+        panel.base_url_combo = MagicMock()
         panel.method_choice = MagicMock()
         panel.url_text = MagicMock()
         panel.auth_choice = MagicMock()
@@ -27,7 +28,7 @@ def make_panel() -> RequestPanel:
         return panel
 
 
-def test_prefill_url_without_base() -> None:
+def test_prefill_url_is_path() -> None:
     panel = make_panel()
     endpoint = Endpoint(method="GET", path="/users", summary="", description="")
     panel.method_choice.FindString.return_value = 0
@@ -37,14 +38,45 @@ def test_prefill_url_without_base() -> None:
     panel.url_text.SetValue.assert_called_once_with("/users")
 
 
-def test_prefill_url_with_base() -> None:
+def test_join_url() -> None:
+    assert join_url("", "/users") == "/users"
+    assert join_url("https://api.example.com/v0", "/users") == "https://api.example.com/v0/users"
+    assert join_url("https://api.example.com/v0/", "users") == "https://api.example.com/v0/users"
+    assert join_url("https://api.example.com", "http://other.test/x") == "http://other.test/x"
+
+
+def test_set_servers_selects_first() -> None:
     panel = make_panel()
-    endpoint = Endpoint(method="GET", path="/users", summary="", description="")
-    panel.method_choice.FindString.return_value = 0
 
-    panel.prefill_from_endpoint(endpoint, base_url="https://api.example.com")
+    panel.set_servers(["https://a.test", "https://b.test"])
 
-    panel.url_text.SetValue.assert_called_once_with("https://api.example.com/users")
+    panel.base_url_combo.Set.assert_called_once_with(["https://a.test", "https://b.test"])
+    panel.base_url_combo.SetSelection.assert_called_once_with(0)
+
+
+def test_send_without_absolute_base_url_errors_and_focuses_base() -> None:
+    panel = make_panel()
+    panel.base_url_combo.GetValue.return_value = "/api/v3"
+    panel.url_text.GetValue.return_value = "/pets"
+
+    panel.on_send()
+
+    panel._on_error.assert_called_once()
+    panel.base_url_combo.SetFocus.assert_called_once()
+    assert panel._history.list_items() == []
+
+
+def test_send_prefixes_base_url() -> None:
+    panel = make_panel()
+    panel.base_url_combo.GetValue.return_value = "https://api.example.com/v0/"
+    panel.url_text.GetValue.return_value = "/users"
+    panel.method_choice.GetStringSelection.return_value = "GET"
+    panel.body_text.GetValue.return_value = ""
+
+    with patch("spectra.request_panel.threading.Thread"):
+        panel.on_send()
+
+    assert panel._history.get(0).url == "https://api.example.com/v0/users"
 
 
 def test_prefill_method() -> None:

@@ -31,6 +31,7 @@ class Endpoint:
 class ParsedSpec:
     endpoints: list[Endpoint]
     by_tag: dict[str, list[Endpoint]]
+    servers: list[str] = field(default_factory=list)
 
 
 def _schema_to_text(schema: dict | None) -> str:
@@ -156,6 +157,31 @@ def _group_by_tag(endpoints: list[Endpoint]) -> dict[str, list[Endpoint]]:
     return by_tag
 
 
+def _parse_servers(spec: dict) -> list[str]:
+    """Base URLs from the spec; may be relative to where the spec was loaded from."""
+    if isinstance(spec.get("swagger"), str):
+        host = spec.get("host")
+        base_path = str(spec.get("basePath") or "")
+        if not isinstance(host, str) or not host:
+            return [base_path] if base_path else []
+        schemes = spec.get("schemes") or []
+        scheme = "https" if "https" in schemes or not schemes else str(schemes[0])
+        return [f"{scheme}://{host}{base_path}"]
+
+    servers: list[str] = []
+    for server in spec.get("servers") or []:
+        if not isinstance(server, dict) or not isinstance(server.get("url"), str):
+            continue
+        url = server["url"]
+        variables = server.get("variables")
+        if isinstance(variables, dict):
+            for name, variable in variables.items():
+                if isinstance(variable, dict) and "default" in variable:
+                    url = url.replace(f"{{{name}}}", str(variable["default"]))
+        servers.append(url)
+    return servers
+
+
 def parse_spec(spec: dict) -> ParsedSpec:
     """Parse an OpenAPI 3.x or Swagger 2.x spec to endpoint metadata."""
     paths = spec.get("paths")
@@ -211,4 +237,6 @@ def parse_spec(spec: dict) -> ParsedSpec:
             )
             endpoints.append(endpoint)
 
-    return ParsedSpec(endpoints=endpoints, by_tag=_group_by_tag(endpoints))
+    return ParsedSpec(
+        endpoints=endpoints, by_tag=_group_by_tag(endpoints), servers=_parse_servers(spec)
+    )

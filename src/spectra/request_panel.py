@@ -17,6 +17,13 @@ StatusCallback = Callable[[str], None]
 ErrorCallback = Callable[[str], None]
 
 
+def join_url(base_url: str, url: str) -> str:
+    """Prefix a relative URL with the base URL; absolute URLs pass through."""
+    if not base_url or url.startswith(("http://", "https://")):
+        return url
+    return f"{base_url.rstrip('/')}/{url.lstrip('/')}"
+
+
 class RequestPanel(wx.Panel):
     def __init__(
         self,
@@ -42,10 +49,15 @@ class RequestPanel(wx.Panel):
         self.method_choice.SetName("Request Method")
         self.method_choice.SetSelection(0)
 
-        url_label = wx.StaticText(self, label="URL")
-        url_label.SetName("URL Label")
+        base_url_label = wx.StaticText(self, label="Base URL")
+        base_url_label.SetName("Base URL Label")
+        self.base_url_combo = wx.ComboBox(self)
+        self.base_url_combo.SetName("Base URL")
+
+        url_label = wx.StaticText(self, label="Path or full URL")
+        url_label.SetName("Path or full URL Label")
         self.url_text = wx.TextCtrl(self)
-        self.url_text.SetName("Request URL")
+        self.url_text.SetName("Path or full URL")
 
         auth_type_label = wx.StaticText(self, label="Auth Type")
         auth_type_label.SetName("Auth Type Label")
@@ -79,6 +91,8 @@ class RequestPanel(wx.Panel):
 
         grid.Add(method_label, 0, wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.method_choice, 1, wx.EXPAND)
+        grid.Add(base_url_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.base_url_combo, 1, wx.EXPAND)
         grid.Add(url_label, 0, wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.url_text, 1, wx.EXPAND)
         grid.Add(auth_type_label, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -95,11 +109,19 @@ class RequestPanel(wx.Panel):
         sizer.Add(send_button, 0, wx.ALIGN_RIGHT | wx.ALL, 4)
         self.SetSizer(sizer)
 
-    def prefill_from_endpoint(self, endpoint: Endpoint, base_url: str = "") -> None:
+    def set_servers(self, servers: list[str]) -> None:
+        self.base_url_combo.Set(servers)
+        # Select rather than just SetValue, so the first Down arrow reaches the next server.
+        if servers:
+            self.base_url_combo.SetSelection(0)
+        else:
+            self.base_url_combo.SetValue("")
+
+    def prefill_from_endpoint(self, endpoint: Endpoint) -> None:
         method_index = self.method_choice.FindString(endpoint.method)
         if method_index != wx.NOT_FOUND:
             self.method_choice.SetSelection(method_index)
-        self.url_text.SetValue(f"{base_url}{endpoint.path}" if base_url else endpoint.path)
+        self.url_text.SetValue(endpoint.path)
 
     def parse_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -127,7 +149,15 @@ class RequestPanel(wx.Panel):
         method = self.method_choice.GetStringSelection() or "GET"
         url = self.url_text.GetValue().strip()
         if not url:
-            self._on_error("URL is required")
+            self._on_error("Path or full URL is required")
+            return
+        url = join_url(self.base_url_combo.GetValue().strip(), url)
+        if not url.startswith(("http://", "https://")):
+            self._on_error(
+                "Base URL is missing or relative. Enter a full base URL (https://...) "
+                "in the Base URL field, or a full URL in the Path field."
+            )
+            self.base_url_combo.SetFocus()
             return
 
         headers = self.parse_headers()
