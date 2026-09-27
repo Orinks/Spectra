@@ -211,7 +211,10 @@ class MainFrame(wx.Frame):
             servers = [urljoin(source, server) for server in servers or ["."]]
         self.request_panel.set_servers(servers)
 
-        self.SetStatusText(f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints)")
+        base = servers[0] if servers else "none, enter one"
+        self.SetStatusText(
+            f"Spec loaded: {source} ({len(parsed.endpoints)} endpoints), base URL {base}"
+        )
         wx.CallAfter(self.endpoint_tree.focus)
 
         already_saved = any(s.source == source for s in self._spec_store.list_specs())

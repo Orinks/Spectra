@@ -51,7 +51,19 @@ def test_set_servers_selects_first() -> None:
     panel.set_servers(["https://a.test", "https://b.test"])
 
     panel.base_url_combo.Set.assert_called_once_with(["https://a.test", "https://b.test"])
-    panel.base_url_combo.SetValue.assert_called_once_with("https://a.test")
+    panel.base_url_combo.SetSelection.assert_called_once_with(0)
+
+
+def test_send_without_absolute_base_url_errors_and_focuses_base() -> None:
+    panel = make_panel()
+    panel.base_url_combo.GetValue.return_value = "/api/v3"
+    panel.url_text.GetValue.return_value = "/pets"
+
+    panel.on_send()
+
+    panel._on_error.assert_called_once()
+    panel.base_url_combo.SetFocus.assert_called_once()
+    assert panel._history.list_items() == []
 
 
 def test_send_prefixes_base_url() -> None:

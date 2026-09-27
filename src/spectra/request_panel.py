@@ -40,11 +40,6 @@ class RequestPanel(wx.Panel):
         self._on_error = on_error
         self._history = history
 
-        base_url_label = wx.StaticText(self, label="Base URL")
-        base_url_label.SetName("Base URL Label")
-        self.base_url_combo = wx.ComboBox(self)
-        self.base_url_combo.SetName("Base URL")
-
         method_label = wx.StaticText(self, label="Method")
         method_label.SetName("Method Label")
         self.method_choice = wx.Choice(
@@ -54,10 +49,15 @@ class RequestPanel(wx.Panel):
         self.method_choice.SetName("Request Method")
         self.method_choice.SetSelection(0)
 
-        url_label = wx.StaticText(self, label="URL")
-        url_label.SetName("URL Label")
+        base_url_label = wx.StaticText(self, label="Base URL")
+        base_url_label.SetName("Base URL Label")
+        self.base_url_combo = wx.ComboBox(self)
+        self.base_url_combo.SetName("Base URL")
+
+        url_label = wx.StaticText(self, label="Path or full URL")
+        url_label.SetName("Path or full URL Label")
         self.url_text = wx.TextCtrl(self)
-        self.url_text.SetName("Request URL")
+        self.url_text.SetName("Path or full URL")
 
         auth_type_label = wx.StaticText(self, label="Auth Type")
         auth_type_label.SetName("Auth Type Label")
@@ -89,10 +89,10 @@ class RequestPanel(wx.Panel):
         grid = wx.FlexGridSizer(cols=2, hgap=6, vgap=6)
         grid.AddGrowableCol(1, 1)
 
-        grid.Add(base_url_label, 0, wx.ALIGN_CENTER_VERTICAL)
-        grid.Add(self.base_url_combo, 1, wx.EXPAND)
         grid.Add(method_label, 0, wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.method_choice, 1, wx.EXPAND)
+        grid.Add(base_url_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.base_url_combo, 1, wx.EXPAND)
         grid.Add(url_label, 0, wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.url_text, 1, wx.EXPAND)
         grid.Add(auth_type_label, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -111,7 +111,11 @@ class RequestPanel(wx.Panel):
 
     def set_servers(self, servers: list[str]) -> None:
         self.base_url_combo.Set(servers)
-        self.base_url_combo.SetValue(servers[0] if servers else "")
+        # Select rather than just SetValue, so the first Down arrow reaches the next server.
+        if servers:
+            self.base_url_combo.SetSelection(0)
+        else:
+            self.base_url_combo.SetValue("")
 
     def prefill_from_endpoint(self, endpoint: Endpoint) -> None:
         method_index = self.method_choice.FindString(endpoint.method)
@@ -145,9 +149,16 @@ class RequestPanel(wx.Panel):
         method = self.method_choice.GetStringSelection() or "GET"
         url = self.url_text.GetValue().strip()
         if not url:
-            self._on_error("URL is required")
+            self._on_error("Path or full URL is required")
             return
         url = join_url(self.base_url_combo.GetValue().strip(), url)
+        if not url.startswith(("http://", "https://")):
+            self._on_error(
+                "Base URL is missing or relative. Enter a full base URL (https://...) "
+                "in the Base URL field, or a full URL in the Path field."
+            )
+            self.base_url_combo.SetFocus()
+            return
 
         headers = self.parse_headers()
         headers.update(self.build_auth_headers())
