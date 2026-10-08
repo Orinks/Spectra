@@ -17,8 +17,14 @@ Swagger UI and many API tools can be difficult to use with screen readers. Spect
 
 ## Installation
 
+On Windows, download `Spectra-<version>-windows-x64-portable.zip` from the
+[latest release](https://github.com/Orinks/Spectra/releases/latest), extract it,
+and run `Spectra.exe`.
+
+From source (Python 3.11 or later):
+
 ```bash
-pip install -e .
+pip install -e ".[wx]"
 ```
 
 Run:
